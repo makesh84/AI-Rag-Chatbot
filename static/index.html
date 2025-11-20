@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>RAG Chatbot (Groq)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px auto;
+            max-width: 800px;
+        }
+
+        #chat-box {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            background: #fafafa;
+        }
+
+        .msg-user {
+            font-weight: bold;
+            margin-top: 12px;
+        }
+
+        .msg-bot {
+            margin-left: 10px;
+            white-space: pre-wrap;
+            color: #333;
+        }
+
+        .sources {
+            font-size: 0.8rem;
+            color: #555;
+            margin-left: 10px;
+        }
+
+        form {
+            margin-top: 15px;
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            background: #2563eb;
+            color: white;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>RAG Chatbot (Groq + Chroma)</h1>
+    <div id="chat-box"></div>
+
+    <form id="chat-form">
+        <input id="question" type="text" placeholder="Ask something about your documents..." />
+        <button type="submit">Send</button>
+    </form>
+
+    <script>
+        const form = document.getElementById("chat-form");
+        const input = document.getElementById("question");
+        const box = document.getElementById("chat-box");
+
+        function addMessage(role, text, sources) {
+            const userClass = role === "user" ? "msg-user" : "msg-bot";
+            const label = role === "user" ? "You" : "Bot";
+
+            const div = document.createElement("div");
+            div.className = userClass;
+            div.textContent = `${label}: ${text}`;
+            box.appendChild(div);
+
+            if (role === "bot" && sources && sources.length > 0) {
+                const sDiv = document.createElement("div");
+                sDiv.className = "sources";
+                sDiv.textContent =
+                    "Sources: " +
+                    sources.map((s) => s.source.split("/").slice(-1)[0]).join(", ");
+                box.appendChild(sDiv);
+            }
+
+            box.scrollTop = box.scrollHeight;
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const q = input.value.trim();
+            if (!q) return;
+
+            addMessage("user", q);
+            input.value = "";
+            form.querySelector("button").disabled = true;
+
+            try {
+                const res = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: q }),
+                });
+                const data = await res.json();
+                addMessage("bot", data.answer, data.sources);
+            } catch (err) {
+                addMessage("bot", "Error contacting server: " + err);
+            } finally {
+                form.querySelector("button").disabled = false;
+                input.focus();
+            }
+        });
+    </script>
+</body>
+
+</html>

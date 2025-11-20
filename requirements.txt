@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+
+groq
+
+langchain-core
+langchain-community
+langchain-text-splitters
+chromadb
+
+sentence-transformers
+
+pypdf
+python-docx
+unstructured
