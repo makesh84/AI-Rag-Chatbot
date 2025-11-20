@@ -13,3 +13,5 @@ chromadb
 pypdf
 python-docx
 unstructured
+rank_bm25
+
