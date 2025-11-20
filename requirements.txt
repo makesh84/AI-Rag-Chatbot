@@ -15,3 +15,5 @@ sentence-transformers
 pypdf
 python-docx
 unstructured
+rank_bm25 
+langchain_chroma

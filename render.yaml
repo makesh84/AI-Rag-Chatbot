@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ai-rag-chatbot
+    env: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false   # you will set this in Render dashboard (not in GitHub)
+      - key: CHAT_MODEL
+        value: llama-3.3-70b-versatile
+      - key: DOCS_DIR
+        value: data/docs
+      - key: CHROMA_DB_DIR
+        value: chroma_db
+    disk:
+      name: chroma-disk
+      mountPath: /app/chroma_db
+      sizeGB: 1

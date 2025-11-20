@@ -1,0 +1,38 @@
+name: CI - Build and Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Basic syntax check
+        run: |
+          source venv/bin/activate
+          python -m compileall app
+
+      # OPTIONAL: if you add tests later
+      # - name: Run tests
+      #   run: |
+      #     source venv/bin/activate
+      #     pytest
