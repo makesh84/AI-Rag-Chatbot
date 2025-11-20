@@ -7,14 +7,9 @@ groq
 
 langchain-core
 langchain-community
-langchain-text-splitters
+langchain-huggingface
+langchain-chroma
 chromadb
-
-sentence-transformers
-
 pypdf
 python-docx
 unstructured
-rank_bm25 
-langchain_chroma
-langchain-huggingface

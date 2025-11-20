@@ -17,3 +17,4 @@ services:
       name: chroma-disk
       mountPath: /app/chroma_db
       sizeGB: 1
+

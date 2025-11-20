@@ -47,9 +47,11 @@ Answer only "yes" or "no".
 # --------------------------------------------------------
 
 def get_vectorstore():
+    
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2"
-    )
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+
     return Chroma(
         persist_directory=CHROMA_DB_DIR,
         embedding_function=embeddings

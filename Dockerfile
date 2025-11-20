@@ -2,24 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps for PDF + unstructured
+# Install system dependencies for PDF parsing only
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    poppler-utils \
     libmagic1 \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
-# Default port
-ENV PORT=8000
-
-# Do NOT run ingest here by default (can be heavy).
-# You can uncomment this if your docs are bundled into image:
-# RUN python -m app.ingest || true
+# Copy app source
+COPY app ./app
+COPY static ./static
 
 EXPOSE 8000
 
