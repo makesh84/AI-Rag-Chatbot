@@ -1,89 +1,164 @@
-from typing import List, Dict
-
 from groq import Groq
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
 from .config import GROQ_API_KEY, CHAT_MODEL, CHROMA_DB_DIR
+from .bm25_store import BM25Store
+
+client = Groq(api_key=GROQ_API_KEY)
+from sentence_transformers import CrossEncoder
+
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 SYSTEM_PROMPT = """
-You are a helpful assistant that answers questions using ONLY the provided context.
-- If the answer is not in the context, reply: "I do not have enough information from the documents to answer that."
-- Always mention which source file(s) you used.
-- Be concise and clear.
+You are a helpful assistant. Follow these rules:
+
+1. If context is provided AND relevant → use it.
+2. If context is NOT needed → answer normally.
+3. Keep answers short and clear (5-8 sentences max).
+4. Do NOT hallucinate. If you don't know, say so.
+5. Always return unique source filenames when using RAG.
 """
 
-_client = Groq(api_key=GROQ_API_KEY)
-_embeddings = None
-_vectorstore = None
+
+# --------------------------------------------------------
+# 1. Determine if the question needs RAG
+# --------------------------------------------------------
+
+def is_question_related(question: str) -> bool:
+    relevance_prompt = f"""
+The user asked: "{question}"
+
+Is this question about the content of their uploaded documents?
+Answer only "yes" or "no".
+"""
+
+    resp = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[{"role": "user", "content": relevance_prompt}],
+        temperature=0
+    )
+
+    ans = resp.choices[0].message.content.strip().lower()
+    return ans.startswith("y")  # yes = use RAG
 
 
-def get_embeddings():
-    global _embeddings
-    if _embeddings is None:
-        _embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-mpnet-base-v2"
-        )
-    return _embeddings
-
+# --------------------------------------------------------
+# 2. Vector Store
+# --------------------------------------------------------
 
 def get_vectorstore():
-    global _vectorstore
-    if _vectorstore is None:
-        _vectorstore = Chroma(
-            persist_directory=CHROMA_DB_DIR,
-            embedding_function=get_embeddings(),
-        )
-    return _vectorstore
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-mpnet-base-v2"
+    )
+    return Chroma(
+        persist_directory=CHROMA_DB_DIR,
+        embedding_function=embeddings
+    )
 
 
-def retrieve_context(question: str, k: int = 5):
+def retrieve_context(question, k=5):
+    # Multi-query expansion
+    queries = [question] + generate_queries(question)
+
     vs = get_vectorstore()
-    docs = vs.similarity_search(question, k=k)
-    return docs
+    all_docs = []
+
+    # Collect results from embedding search
+    for q in queries:
+        all_docs.extend(vs.similarity_search(q, k=k))
+
+    # BM25 keyword search
+    bm25 = BM25Store(all_docs)
+    all_docs.extend(bm25.search(question, k=k))
+
+    # Remove duplicates
+    unique = {d.page_content: d for d in all_docs}.values()
+    unique = list(unique)
+
+    # Rerank candidates (this is the magic!)
+    pairs = [[question, d.page_content] for d in unique]
+    scores = reranker.predict(pairs)
+
+    # Sort by reranker score
+    top = sorted(zip(unique, scores), key=lambda x: x[1], reverse=True)
+    top_docs = [doc for doc, score in top[:k]]
+
+    return top_docs
 
 
-def format_docs(docs) -> str:
-    blocks = []
-    for i, d in enumerate(docs, start=1):
-        src = d.metadata.get("source", "unknown")
-        blocks.append(f"[{i}] Source: {src}\n{d.page_content}")
-    return "\n\n".join(blocks)
 
+def generate_queries(question: str):
+    prompt = f"""
+Generate 3 alternative search queries for RAG retrieval.
+Keep them short.
 
-def answer_question(question: str) -> Dict:
-    docs = retrieve_context(question, k=5)
-    context_str = format_docs(docs)
+Original question: "{question}"
+"""
+    resp = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
 
-    user_prompt = f"""
-You MUST use the following context to answer the question.
+    lines = resp.choices[0].message.content.split("\n")
+    return [l.strip("-• ") for l in lines if len(l.strip()) > 3]
 
-Context:
-{context_str}
+# --------------------------------------------------------
+# 3. Main Answer Function
+# --------------------------------------------------------
+
+def answer_question(question: str):
+    # STEP A: Check if we should use RAG
+    use_rag = is_question_related(question)
+
+    if not use_rag:
+        # Answer normally (no context)
+        response = client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": question}
+            ],
+            temperature=0.3
+        )
+        return {
+            "answer": response.choices[0].message.content,
+            "sources": []
+        }
+
+    # STEP B: If RAG needed → use vector DB
+    docs = retrieve_context(question)
+    context_text = "\n\n".join(
+        f"[{i+1}] {d.metadata.get('source')}\n{d.page_content}"
+        for i, d in enumerate(docs)
+    )
+
+    rag_prompt = f"""
+Use ONLY the following context:
+
+{context_text}
 
 Question: {question}
 
-Answer clearly. If the context does not contain the answer, say so.
+Answer briefly and include source numbers when relevant.
 """
 
-    resp = _client.chat.completions.create(
+    response = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": rag_prompt}
         ],
-        temperature=0.1,
+        temperature=0.1
     )
 
-    answer = resp.choices[0].message["content"]
+    # Short, clean source list
+    sources = sorted({
+        d.metadata.get("source", "unknown").split("/")[-1]
+        for d in docs
+    })
 
-    sources = []
-    for d in docs:
-        sources.append(
-            {
-                "source": d.metadata.get("source", "unknown"),
-                "preview": d.page_content[:200],
-            }
-        )
-
-    return {"answer": answer, "sources": sources}
+    return {
+        "answer": response.choices[0].message.content,
+        "sources": sources
+    }

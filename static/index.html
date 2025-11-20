@@ -1,114 +1,167 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8" />
-    <title>RAG Chatbot (Groq)</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px auto;
-            max-width: 800px;
+    <title>RAG Chatbot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: '#2563eb',
+                            soft: '#1d4ed8'
+                        }
+                    }
+                }
+            }
         }
-
-        #chat-box {
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            padding: 10px;
-            height: 400px;
-            overflow-y: auto;
-            background: #fafafa;
-        }
-
-        .msg-user {
-            font-weight: bold;
-            margin-top: 12px;
-        }
-
-        .msg-bot {
-            margin-left: 10px;
-            white-space: pre-wrap;
-            color: #333;
-        }
-
-        .sources {
-            font-size: 0.8rem;
-            color: #555;
-            margin-left: 10px;
-        }
-
-        form {
-            margin-top: 15px;
-            display: flex;
-            gap: 8px;
-        }
-
-        input[type="text"] {
-            flex: 1;
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-
-        button {
-            padding: 8px 16px;
-            border-radius: 4px;
-            border: none;
-            cursor: pointer;
-            background: #2563eb;
-            color: white;
-            font-weight: bold;
-        }
-
-        button:disabled {
-            opacity: 0.6;
-        }
-    </style>
+    </script>
 </head>
 
-<body>
-    <h1>RAG Chatbot (Groq + Chroma)</h1>
-    <div id="chat-box"></div>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center">
 
-    <form id="chat-form">
-        <input id="question" type="text" placeholder="Ask something about your documents..." />
-        <button type="submit">Send</button>
-    </form>
+    <div
+        class="w-full max-w-4xl h-[90vh] flex flex-col bg-slate-900/60 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+        <!-- Header -->
+        <header
+            class="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                    <span class="text-primary text-lg font-semibold">R</span>
+                </div>
+                <div>
+                    <h1 class="font-semibold text-sm sm:text-base">RAG Chatbot</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">
+                        Ask anything about your uploaded documents or general AI/ML.
+                    </p>
+                </div>
+            </div>
+            <button id="clear-chat"
+                class="text-xs px-3 py-1.5 rounded-full border border-slate-700 text-slate-300 hover:bg-slate-800 transition">
+                Clear
+            </button>
+        </header>
+
+        <!-- Chat area -->
+        <main id="chat-box"
+            class="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 bg-gradient-to-b from-slate-900/90 to-slate-950/80">
+            <!-- Initial bot message -->
+            <div class="flex gap-3 items-start">
+                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <span class="text-primary font-semibold text-sm">AI</span>
+                </div>
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl px-3 py-2.5 max-w-[80%] text-sm shadow">
+                    <p class="whitespace-pre-wrap">
+                        Hi! I’m your RAG assistant.
+                        How can I help you today?
+                    </p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Typing indicator -->
+        <div id="typing-indicator" class="px-5 pb-1 text-xs text-slate-400 hidden">
+            Bot is thinking…
+        </div>
+
+        <!-- Input area -->
+        <form id="chat-form"
+            class="border-t border-slate-800 bg-slate-900/80 px-3 sm:px-4 py-3 flex items-center gap-3">
+            <input id="question" type="text"
+                class="flex-1 bg-slate-800/80 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-slate-500"
+                placeholder="Ask something about your docs or AI/ML..." autocomplete="off" />
+            <button type="submit"
+                class="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-soft text-white text-sm font-medium px-4 py-2.5 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed">
+                <span id="send-label">Send</span>
+                <svg id="send-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                    fill="currentColor">
+                    <path
+                        d="M2.94 2.94a.75.75 0 0 1 .78-.18l13 5a.75.75 0 0 1 0 1.38l-13 5A.75.75 0 0 1 2 13.5v-3.86l7.22-.64a.25.25 0 0 0 0-.5L2 7.86V4.5a.75.75 0 0 1 .94-.56Z" />
+                </svg>
+            </button>
+        </form>
+    </div>
 
     <script>
         const form = document.getElementById("chat-form");
         const input = document.getElementById("question");
         const box = document.getElementById("chat-box");
+        const typing = document.getElementById("typing-indicator");
+        const clearBtn = document.getElementById("clear-chat");
+        const sendBtn = form.querySelector("button");
 
-        function addMessage(role, text, sources) {
-            const userClass = role === "user" ? "msg-user" : "msg-bot";
-            const label = role === "user" ? "You" : "Bot";
+        function createMessageBubble(text, role = "bot", sources = []) {
+            const wrapper = document.createElement("div");
+            wrapper.className = "flex gap-3 items-start";
 
-            const div = document.createElement("div");
-            div.className = userClass;
-            div.textContent = `${label}: ${text}`;
-            box.appendChild(div);
-
-            if (role === "bot" && sources && sources.length > 0) {
-                const sDiv = document.createElement("div");
-                sDiv.className = "sources";
-                sDiv.textContent =
-                    "Sources: " +
-                    sources.map((s) => s.source.split("/").slice(-1)[0]).join(", ");
-                box.appendChild(sDiv);
+            const avatar = document.createElement("div");
+            avatar.className = "w-8 h-8 rounded-full flex items-center justify-center shrink-0";
+            if (role === "user") {
+                avatar.classList.add("bg-emerald-500/20");
+                avatar.innerHTML = '<span class="text-emerald-400 font-semibold text-sm">You</span>';
+            } else {
+                avatar.classList.add("bg-primary/20");
+                avatar.innerHTML = '<span class="text-primary font-semibold text-sm">AI</span>';
             }
 
+            const bubble = document.createElement("div");
+            bubble.className =
+                "rounded-2xl px-3 py-2.5 max-w-[80%] text-sm shadow border " +
+                (role === "user"
+                    ? "bg-emerald-500/10 border-emerald-500/40"
+                    : "bg-slate-800/80 border-slate-700");
+
+            const p = document.createElement("p");
+            p.className = "whitespace-pre-wrap";
+            p.textContent = text;
+            bubble.appendChild(p);
+
+            if (sources && sources.length > 0 && role === "bot") {
+                const src = document.createElement("div");
+                src.className = "text-[11px] text-slate-400 mt-1";
+                src.textContent = "Sources: " + sources.join(", ");
+                bubble.appendChild(src);
+            }
+
+            wrapper.appendChild(avatar);
+            wrapper.appendChild(bubble);
+
+            return wrapper;
+        }
+
+        function addMessage(text, role = "bot", sources = []) {
+            const msg = createMessageBubble(text, role, sources);
+            box.appendChild(msg);
             box.scrollTop = box.scrollHeight;
         }
+
+        function setTyping(visible) {
+            typing.classList.toggle("hidden", !visible);
+        }
+
+        clearBtn.addEventListener("click", () => {
+            // Clear all messages except the initial greeting (first child)
+            while (box.children.length > 1) {
+                box.removeChild(box.lastChild);
+            }
+        });
 
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
             const q = input.value.trim();
             if (!q) return;
 
-            addMessage("user", q);
+            addMessage(q, "user");
             input.value = "";
-            form.querySelector("button").disabled = true;
+            input.focus();
+
+            sendBtn.disabled = true;
+            setTyping(true);
 
             try {
                 const res = await fetch("/chat", {
@@ -116,13 +169,19 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ question: q }),
                 });
-                const data = await res.json();
-                addMessage("bot", data.answer, data.sources);
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    addMessage("Error: " + text, "bot");
+                } else {
+                    const data = await res.json();
+                    addMessage(data.answer || "No answer received.", "bot", data.sources || []);
+                }
             } catch (err) {
-                addMessage("bot", "Error contacting server: " + err);
+                addMessage("Network error: " + err.message, "bot");
             } finally {
-                form.querySelector("button").disabled = false;
-                input.focus();
+                sendBtn.disabled = false;
+                setTyping(false);
             }
         });
     </script>
