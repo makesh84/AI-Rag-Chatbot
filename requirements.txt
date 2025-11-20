@@ -17,3 +17,4 @@ python-docx
 unstructured
 rank_bm25 
 langchain_chroma
+langchain-huggingface
